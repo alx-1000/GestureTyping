@@ -1,32 +1,19 @@
 // ジェスチャーの種類
-// 👍(Thumb_Up), 👎(Thumb_Down), ✌️(Victory), 
-// ☝️(Pointng_Up), ✊(Closed_Fist), 👋(Open_Palm), 
-// 🤟(ILoveYou)
+//one, two, three, four, five, zero
 function getCode(left_gesture, right_gesture) {
   let code_array = {
-    "Thumb_Up": 1,
-    "Thumb_Down": 2,
-    "Victory": 3,
-    "Pointing_Up": 4,
-    "Closed_Fist": 5,
-    "Open_Palm": 6,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "zero": 0,
   }
   let left_code = code_array[left_gesture];
   let right_code = code_array[right_gesture];
   // left_codeとright_codeを文字として結合
   let code = String(left_code) + String(right_code);
   return code;
-}
-
-function getCharacter(code) {
-  const codeToChar = {
-    "11": "a", "12": "b", "13": "c", "14": "d", "15": "e", "16": "f",
-    "21": "g", "22": "h", "23": "i", "24": "j", "25": "k", "26": "l",
-    "31": "m", "32": "n", "33": "o", "34": "p", "35": "q", "36": "r",
-    "41": "s", "42": "t", "43": "u", "44": "v", "45": "w", "46": "x",
-    "51": "y", "52": "z", "53": " ", "54": "backspace"
-  };
-  return codeToChar[code] || "";
 }
 
 // 入力サンプル文章 
@@ -50,27 +37,122 @@ let gestures_results;
 let cam = null;
 let p5canvas = null;
 
+let cycling = false;
+let cycleChars = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+let cycleIndex = 0;
+let cycleInterval = null;
+let currentCycleChar = '';
+
+let cycleCharsMap = {
+  'one': ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+  'two': ['h', 'i', 'j', 'k', 'l', 'm', 'n'],
+  'three': ['o', 'p', 'q', 'r', 's', 't', 'u'],
+  'four': ['v', 'w', 'x', 'y', 'z'],
+};
+
+function startCycle(right_gesture) {
+  if (cycling) return;
+  cycling = true;
+  // サイクル対象文字を決定
+  cycleChars = cycleCharsMap[right_gesture] || cycleCharsMap['one'];
+  cycleIndex = 0;
+  currentCycleChar = cycleChars[cycleIndex];
+  // 入力欄の確定済みテキストを保存（未設定時のみ）
+  const input = document.querySelector('input');
+  if (input && (!input.dataset || !input.dataset.confirmedText)) {
+    if (!input.dataset) input.dataset = {};
+    input.dataset.confirmedText = input.value;
+  }
+  updateCycleCharDisplay();
+}
+
+function updateCycleOnOneGesture() {
+  if (!cycling) return;
+  cycleIndex = (cycleIndex + 1) % cycleChars.length;
+  currentCycleChar = cycleChars[cycleIndex];
+  updateCycleCharDisplay();
+}
+
+function stopCycle() {
+  cycling = false;
+  if (cycleInterval) clearInterval(cycleInterval);
+  cycleInterval = null;
+  currentCycleChar = '';
+  updateCycleCharDisplay();
+}
+
+function resetCycle() {
+  if (cycling) {
+    cycleIndex = 0;
+    currentCycleChar = cycleChars[cycleIndex];
+    updateCycleCharDisplay();
+  }
+}
+
+function updateCycleCharDisplay() {
+  // 入力欄には確定済み文字列のみ表示
+  const input = document.querySelector('input');
+  if (input) {
+    // サイクル再開時にinput.dataset.confirmedTextが未設定の場合、input.valueを反映
+    if (!input.dataset.confirmedText) {
+      input.dataset.confirmedText = input.value || '';
+    }
+    let confirmed = input.dataset ? (input.dataset.confirmedText || '') : '';
+    input.value = confirmed;
+    input.style.color = 'black';
+  }
+  // サイクル中の文字はcycleChar要素に大きく赤色で表示
+  let elem = document.getElementById('cycleChar');
+  if (elem) {
+    if (cycling) {
+      elem.innerText = currentCycleChar;
+      elem.style.color = 'red';
+    } else {
+      elem.innerText = '';
+      elem.style.color = '#0077cc';
+    }
+  }
+  // サイクル状態をコンソールに表示
+  console.log('cycling:', cycling, 'currentCycleChar:', currentCycleChar, 'cycleIndex:', cycleIndex);
+}
+
 function setup() {
   p5canvas = createCanvas(320, 240);
   p5canvas.parent('#canvas');
 
-  // When gestures are found, the following function is called. The detection results are stored in results.
-  let lastChar = "";
-  let lastCharTime = millis();
+  // 画面にサイクル中の文字を表示する要素を追加
+  if (!document.getElementById('cycleChar')) {
+    let charElem = document.createElement('div');
+    charElem.id = 'cycleChar';
+    charElem.style.position = 'fixed'; // fixedで常に画面下部中央
+    charElem.style.bottom = '150px'; // 以前より上に表示
+    charElem.style.left = '50%';
+    charElem.style.transform = 'translateX(-50%)';
+    charElem.style.fontSize = '64px';
+    charElem.style.fontWeight = 'bold';
+    charElem.style.color = 'red';
+    charElem.style.background = 'rgba(255,255,255,0.8)';
+    charElem.style.padding = '8px 32px';
+    charElem.style.borderRadius = '16px';
+    charElem.style.zIndex = '9999';
+    document.body.appendChild(charElem);
+  }
+
+  let lastLeftFive = false;
+  let lastRightOne = false;
+  let lastLeftZero = false;
+  let rightOneStartTime = 0;
+  let lastCycleUpdateTime = 0;
+  let lastBothFive = false;
+  let bothFiveStartTime = 0;
+  let lastBothTwo = false;
+  let bothTwoStartTime = 0;
 
   gotGestures = function (results) {
     gestures_results = results;
-
+    let left_gesture = null;
+    let right_gesture = null;
     if (results.gestures.length == 2) {
-      if (game_mode.now == "ready" && game_mode.previous == "notready") {
-        // ゲーム開始前の状態から、カメラが起動した後の状態に変化した場合
-        game_mode.previous = game_mode.now;
-        game_mode.now = "playing";
-        document.querySelector('input').value = ""; // 入力欄をクリア
-        game_start_time = millis(); // ゲーム開始時間を記録
-      }
-      let left_gesture;
-      let right_gesture;
       if (results.handedness[0][0].categoryName == "Left") {
         left_gesture = results.gestures[0][0].categoryName;
         right_gesture = results.gestures[1][0].categoryName;
@@ -78,20 +160,103 @@ function setup() {
         left_gesture = results.gestures[1][0].categoryName;
         right_gesture = results.gestures[0][0].categoryName;
       }
-      let code = getCode(left_gesture, right_gesture);
-      let c = getCharacter(code);
-
-      let now = millis();
-      if (c === lastChar) {
-        if (now - lastCharTime > 1000) {
-          // 1秒以上cが同じ値である場合の処理
-          typeChar(c);
-          lastCharTime = now;
-        }
+    }
+    // 右手one～four & 左手zeroでサイクル開始・維持
+    let rightCycleGestures = ['one', 'two', 'three', 'four'];
+    if (rightCycleGestures.includes(right_gesture) && left_gesture === 'zero') {
+      if (!lastRightOne || !lastLeftZero || cycleChars !== cycleCharsMap[right_gesture]) {
+        startCycle(right_gesture);
+        currentCycleChar = cycleChars[cycleIndex];
+        rightOneStartTime = millis();
+        lastCycleUpdateTime = millis();
       } else {
-        lastChar = c;
-        lastCharTime = now;
+        let now = millis();
+        if (now - lastCycleUpdateTime >= 400) { // 0.4秒周期に変更
+          updateCycleOnOneGesture();
+          lastCycleUpdateTime = now;
+        }
       }
+      lastRightOne = true;
+      lastLeftZero = true;
+    } else {
+      // five/oneで確定した直後はstopCycleしない
+      // 左手がnoneの場合はサイクルを止めない
+      if (left_gesture !== 'five' && left_gesture !== 'one' && left_gesture !== 'none' && (lastRightOne || lastLeftZero)) {
+        stopCycle();
+      }
+      lastRightOne = false;
+      lastLeftZero = false;
+    }
+    // 左手fiveで確定（サイクル中のみ）
+    if (left_gesture === 'five') {
+      if (!lastLeftFive && cycling) {
+        const charToInput = currentCycleChar;
+        console.log('charToInput:', charToInput);
+        typeChar(charToInput);
+        // fiveで確定したときだけstopCycle
+        stopCycle();
+      }
+      lastLeftFive = true;
+    } else {
+      lastLeftFive = false;
+    }
+    // 両手fiveで1秒続いたらスペース
+    if (left_gesture === 'five' && right_gesture === 'five') {
+      if (!lastBothFive) {
+        bothFiveStartTime = millis();
+      } else {
+        if (millis() - bothFiveStartTime >= 1000) {
+          typeChar(' ');
+          bothFiveStartTime = millis(); // 連続でスペースを打つ場合はリセット
+        }
+      }
+      lastBothFive = true;
+    } else {
+      lastBothFive = false;
+    }
+    // 両手twoで1秒続いたらbackspace
+    if (left_gesture === 'two' && right_gesture === 'two') {
+      if (!lastBothTwo) {
+        bothTwoStartTime = millis();
+      } else {
+        if (millis() - bothTwoStartTime >= 1000) {
+          typeChar('backspace');
+          bothTwoStartTime = millis(); // 連続で消す場合はリセット
+        }
+      }
+      lastBothTwo = true;
+    } else {
+      lastBothTwo = false;
+    }
+
+    if (results.gestures.length == 2) {
+      if (game_mode.now == "ready" && game_mode.previous == "notready") {
+        // ゲーム開始前の状態から、カメラが起動した後の状態に変化した場合
+        game_mode.previous = game_mode.now;
+        game_mode.now = "playing";
+        const input = document.querySelector('input');
+        if (input) {
+          input.value = "";
+          input.dataset.confirmedText = '';
+          input.style.color = 'black';
+        }
+        game_start_time = millis(); // ゲーム開始時間を記録
+      }
+      // getCode, getCharacterの呼び出しを削除
+      // let code = getCode(left_gesture, right_gesture);
+      // let c = getCharacter(code);
+
+      // let now = millis();
+      // if (c === lastChar) {
+      //   if (now - lastCharTime > 1000) {
+      //     // 1秒以上cが同じ値である場合の処理
+      //     typeChar(c);
+      //     lastCharTime = now;
+      //   }
+      // } else {
+      //   lastChar = c;
+      //   lastCharTime = now;
+      // }
     }
 
   }
@@ -119,6 +284,11 @@ function typeChar(c) {
     input.value = input.value.slice(0, -1);
   } else {
     input.value += c;
+  }
+
+  // ここで確定済みテキストも更新
+  if (input.dataset) {
+    input.dataset.confirmedText = input.value;
   }
 
   let inputValue = input.value;
@@ -288,5 +458,3 @@ function draw() {
   }
 
 }
-
-
