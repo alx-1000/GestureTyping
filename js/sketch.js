@@ -138,6 +138,45 @@ function setup() {
     document.body.appendChild(charElem);
   }
 
+  // ===== サイクル周期選択UIをタイトルとstartボタンの間に追加 =====
+  if (!document.getElementById('cycleIntervalSelector')) {
+    const selectorDiv = document.createElement('div');
+    selectorDiv.id = 'cycleIntervalSelector';
+    selectorDiv.style.position = 'static'; // staticでDOM内の順序で挿入
+    selectorDiv.style.margin = '16px auto';
+    selectorDiv.style.background = 'rgba(255,255,255,0.9)';
+    selectorDiv.style.padding = '8px 24px';
+    selectorDiv.style.borderRadius = '12px';
+    selectorDiv.style.fontSize = '18px';
+    selectorDiv.style.textAlign = 'center';
+    selectorDiv.innerHTML = `
+      <label for="cycleIntervalSelect"><b>サイクル速度:</b></label>
+      <select id="cycleIntervalSelect">
+        <option value="300">速い (0.3秒)</option>
+        <option value="400" selected>普通 (0.4秒)</option>
+        <option value="500">遅い (0.5秒)</option>
+      </select>
+    `;
+    // タイトルとstartボタンの間に挿入
+    const titleElem = document.querySelector('h1, .title, #title');
+    const startBtn = document.querySelector('button, .start, #start');
+    if (titleElem && startBtn && titleElem.parentNode === startBtn.parentNode) {
+      titleElem.parentNode.insertBefore(selectorDiv, startBtn);
+    } else if (titleElem && titleElem.parentNode) {
+      titleElem.parentNode.insertBefore(selectorDiv, titleElem.nextSibling);
+    } else {
+      document.body.insertBefore(selectorDiv, document.body.firstChild);
+    }
+  }
+  // サイクル周期の値をグローバル変数で管理
+  window.cycleIntervalMs = 400;
+  const selectElem = document.getElementById('cycleIntervalSelect');
+  if (selectElem) {
+    selectElem.addEventListener('change', function() {
+      window.cycleIntervalMs = parseInt(this.value);
+    });
+  }
+
   let lastLeftFive = false;
   let lastRightOne = false;
   let lastLeftZero = false;
@@ -171,7 +210,7 @@ function setup() {
         lastCycleUpdateTime = millis();
       } else {
         let now = millis();
-        if (now - lastCycleUpdateTime >= 400) { // 0.4秒周期に変更
+        if (now - lastCycleUpdateTime >= (window.cycleIntervalMs || 400)) { // 選択UIの値を使用
           updateCycleOnOneGesture();
           lastCycleUpdateTime = now;
         }
@@ -262,6 +301,32 @@ function setup() {
   }
 }
 
+// ===== ミスタイピング・バックスペースカウンターのグローバル変数と表示要素をinput欄の下に追加 =====
+if (typeof window.mistypeCount === 'undefined') window.mistypeCount = 0;
+if (typeof window.backspaceCount === 'undefined') window.backspaceCount = 0;
+function updateCountersDisplay() {
+  let input = document.querySelector('input');
+  if (!input) return;
+  let counterDiv = document.getElementById('mistypeBackspaceCounter');
+  if (!counterDiv) {
+    counterDiv = document.createElement('div');
+    counterDiv.id = 'mistypeBackspaceCounter';
+    counterDiv.style.position = 'static';
+    counterDiv.style.margin = '12px auto 0 auto';
+    counterDiv.style.background = 'rgba(255,255,255,0.95)';
+    counterDiv.style.padding = '8px 32px';
+    counterDiv.style.borderRadius = '16px';
+    counterDiv.style.fontSize = '20px';
+    counterDiv.style.fontWeight = 'bold';
+    counterDiv.style.color = '#d00';
+    counterDiv.style.textAlign = 'center';
+    counterDiv.style.zIndex = '10001';
+    // inputの直後に挿入
+    input.parentNode.insertBefore(counterDiv, input.nextSibling);
+  }
+  counterDiv.innerHTML = `ミスタイピング: <span style="color:#d00">${window.mistypeCount}</span>　バックスペース: <span style="color:#0077cc">${window.backspaceCount}</span>`;
+}
+
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -276,14 +341,32 @@ function typeChar(c) {
     console.warn("Empty character received, ignoring.");
     return;
   }
+  // バックスペースカウンターの更新
+  if (c === "backspace") {
+    window.backspaceCount = (window.backspaceCount || 0) + 1;
+    updateCountersDisplay();
+  }
   // inputにフォーカスする
   document.querySelector('input').focus();
   // 入力欄に文字を追加または削除する関数
   const input = document.querySelector('input');
+  let before = input.value;
   if (c === "backspace") {
     input.value = input.value.slice(0, -1);
   } else {
     input.value += c;
+  }
+  // ミスタイピングカウンターの更新（入力後の値と正解テキストを比較）
+  if (c !== "backspace") {
+    const messageElem = document.querySelector('#message');
+    if (messageElem) {
+      const target = messageElem.innerText;
+      let idx = input.value.length - 1;
+      if (idx >= 0 && idx < target.length && input.value[idx] !== target[idx]) {
+        window.mistypeCount = (window.mistypeCount || 0) + 1;
+        updateCountersDisplay();
+      }
+    }
   }
 
   // ここで確定済みテキストも更新
@@ -357,7 +440,11 @@ function startWebcam() {
 function draw() {
   background(127);
   if (cam) {
+    push();
+    translate(width, 0);
+    scale(-1, 1); // 左右反転
     image(cam, 0, 0, width, height);
+    pop();
   }
   // 各頂点座標を表示する
   // 各頂点座標の位置と番号の対応は以下のURLを確認
